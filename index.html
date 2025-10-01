@@ -4,7 +4,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>領據產生器（加密名單｜一式兩份同頁｜簽章｜PDF）</title>
+  <title>領據產生器（加密名單｜向量PDF｜一式兩份同頁｜簽章）</title>
   <style>
     body {
       font-family: "Noto Sans TC", -apple-system, BlinkMacSystemFont, "Helvetica Neue", Arial;
@@ -135,7 +135,7 @@
 
 <body>
   <div class="app">
-    <h1>領據產生器（加密名單）</h1>
+    <h1>領據產生器（加密名單 + 向量PDF）</h1>
 
     <div class="controls">
       <label>選擇：</label>
@@ -145,7 +145,8 @@
       <button class="btn" id="generateSelected">產生領據</button>
       <div style="margin-left:auto;display:flex;gap:8px">
         <button class="btn gray" id="clearAll">清除所有</button>
-        <button class="btn" id="exportPDF">匯出 PDF（每對同頁）</button>
+        <button class="btn" id="exportAll">全部匯出（不含簽名）</button>
+        <button class="btn" id="exportPDF">匯出 PDF（每對同頁，向量繪製）</button>
       </div>
     </div>
 
@@ -167,86 +168,57 @@
 
     <div id="receipts" class="receipts" aria-live="polite"></div>
 
+    <div style="margin-top:18px;color:#666;font-size:13px">
+      * 本頁會自動從 <code>people.enc.json</code> 讀取資料；中文完全向量化需要內嵌字型（可選，見程式碼
+      <code>EMBEDDED_FONT_BASE64</code>），否則中文將以小型圖片嵌入（仍相當小）。
+    </div>
   </div>
 
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+  <!-- libs -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+
   <script>
+    // ===== 可選：內嵌 CJK 字型（Base64 的 TTF 內容） =====
+    // 若你有 NotoSansTC-Regular.ttf 的 base64，貼到下方字串即可讓中文用向量文字輸出。
+    // 預設為空，則中文以小圖嵌入，檔案仍然很小。
+    const EMBEDDED_FONT_BASE64 = ""; // <- 放 base64 TTF 字串（可選）
+
     // ===== Crypto helpers (WebCrypto, AES-GCM, PBKDF2) =====
     const enc = new TextEncoder();
     const dec = new TextDecoder();
-    const b64 = {
-      to(b) { return btoa(String.fromCharCode(...new Uint8Array(b))); },
-      from(s) { return Uint8Array.from(atob(s), c => c.charCodeAt(0)).buffer; }
-    };
+    const b64 = { to(b) { return btoa(String.fromCharCode(...new Uint8Array(b))); }, from(s) { return Uint8Array.from(atob(s), c => c.charCodeAt(0)).buffer; } };
     async function deriveKey(password, salt) {
       const keyMat = await crypto.subtle.importKey('raw', enc.encode(password), 'PBKDF2', false, ['deriveKey']);
-      return crypto.subtle.deriveKey(
-        { name: 'PBKDF2', salt, iterations: 120000, hash: 'SHA-256' },
-        keyMat,
-        { name: 'AES-GCM', length: 256 },
-        false,
-        ['encrypt', 'decrypt']
-      );
+      return crypto.subtle.deriveKey({ name: 'PBKDF2', salt, iterations: 120000, hash: 'SHA-256' }, keyMat, { name: 'AES-GCM', length: 256 }, false, ['encrypt', 'decrypt']);
     }
     async function decryptJSONEnvelope(envelope, password) {
-      // envelope: { salt: b64, iv: b64, ciphertext: b64 }
-      const salt = b64.from(envelope.salt);
-      const iv = new Uint8Array(b64.from(envelope.iv));
-      const ct = b64.from(envelope.ciphertext);
-      const key = await deriveKey(password, salt);
-      const plainBuf = await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, key, ct);
-      return dec.decode(plainBuf);
+      const salt = b64.from(envelope.salt); const iv = new Uint8Array(b64.from(envelope.iv)); const ct = b64.from(envelope.ciphertext);
+      const key = await deriveKey(password, salt); const plainBuf = await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, key, ct); return dec.decode(plainBuf);
     }
 
     // ===== CSV helpers =====
     function parseCSV(text) {
-      // 簡易解析（無引號處理）。header: name,position,amount,id_number,address,bank_account,phone,memo
-      const lines = text.trim().split(/\r?\n/).map(l => l.trim()).filter(Boolean);
-      if (!lines.length) return [];
-      const headers = lines[0].split(',').map(h => h.trim());
-      const rows = [];
-      for (let i = 1; i < lines.length; i++) {
-        const cols = lines[i].split(',').map(c => c.trim());
-        const obj = {}; headers.forEach((h, idx) => obj[h] = cols[idx] ?? '');
-        rows.push(obj);
-      }
-      return rows;
+      const lines = text.trim().split(/\r?\n/).map(l => l.trim()).filter(Boolean); if (!lines.length) return [];
+      const headers = lines[0].split(',').map(h => h.trim()); const rows = []; for (let i = 1; i < lines.length; i++) { const cols = lines[i].split(',').map(c => c.trim()); const obj = {}; headers.forEach((h, idx) => obj[h] = cols[idx] ?? ''); rows.push(obj); } return rows;
     }
     function escapeHtml(s) { if (s == null) return ''; return String(s).replace(/[&<>"']/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[m])); }
     function formatCurrency(n) { if (n == null || n === '') return ''; return Number(String(n).replace(/[^0-9.-]/g, '')).toLocaleString() + ' 元'; }
-    function numberToChinese(num) {
-      const units = ['', '拾', '佰', '仟', '萬', '拾', '佰', '仟', '億'];
-      const chars = ['零', '壹', '貳', '參', '肆', '伍', '陸', '柒', '捌', '玖'];
-      const s = String(parseInt(String(num).replace(/\D/g, '') || '0', 10));
-      if (s === '0') return '零元整';
-      let out = '';
-      const arr = s.split('').reverse();
-      for (let i = 0; i < arr.length; i++) {
-        const n = +arr[i];
-        if (n === 0) { if (!out.startsWith('零')) out = '零' + out; }
-        else { out = chars[n] + units[i] + out; }
-      }
-      out = out.replace(/零+/g, '零').replace(/零$/, '');
-      return out + '元整';
-    }
+    function numberToChinese(num) { const units = ['', '拾', '佰', '仟', '萬', '拾', '佰', '仟', '億']; const chars = ['零', '壹', '貳', '參', '肆', '伍', '陸', '柒', '捌', '玖']; const s = String(parseInt(String(num).replace(/\D/g, '') || '0', 10)); if (s === '0') return '零元整'; let out = ''; const arr = s.split('').reverse(); for (let i = 0; i < arr.length; i++) { const n = +arr[i]; if (n === 0) { if (!out.startsWith('零')) out = '零' + out; } else { out = chars[n] + units[i] + out; } } out = out.replace(/零+/g, '零').replace(/零$/, ''); return out + '元整'; }
 
-    let dataList = [];
+    let dataList = []; let currentPerson = null;
     const personSelect = document.getElementById('personSelect');
     const receiptsEl = document.getElementById('receipts');
 
-    // ===== Load encrypted list =====
+    // 自動載入加密名單
     (async function init() {
       try {
         const res = await fetch('./people.enc.json', { cache: 'no-store' });
         if (!res.ok) { personSelect.innerHTML = '<option>（找不到 people.enc.json）</option>'; return; }
         const envelope = await res.json();
-        const password = prompt('請輸入名單密碼（不會上傳）：');
-        if (!password) { personSelect.innerHTML = '<option>（未提供密碼）</option>'; return; }
-        const csvText = await decryptJSONEnvelope(envelope, password).catch(() => null);
-        if (!csvText) { personSelect.innerHTML = '<option>（密碼錯誤或解密失敗）</option>'; return; }
-        dataList = parseCSV(csvText);
-        rebuildSelect();
+        const password = prompt('請輸入名單密碼（不會上傳）：'); if (!password) { personSelect.innerHTML = '<option>（未提供密碼）</option>'; return; }
+        const csv = await decryptJSONEnvelope(envelope, password).catch(() => null);
+        if (!csv) { personSelect.innerHTML = '<option>（密碼錯誤或解密失敗）</option>'; return; }
+        dataList = parseCSV(csv); rebuildSelect();
       } catch (e) { personSelect.innerHTML = '<option>（讀取名單失敗）</option>'; }
       document.getElementById('sigDate').value = (new Date()).toISOString().slice(0, 10);
     })();
@@ -257,7 +229,15 @@
       dataList.forEach((r, idx) => { const opt = document.createElement('option'); opt.value = idx; opt.textContent = r.name + (r.position ? ' — ' + r.position : ''); personSelect.appendChild(opt); });
     }
 
-    // ===== Signature pad =====
+    // 切換人名：清空畫面與簽名板、重設日期
+    personSelect.addEventListener('change', () => {
+      receiptsEl.innerHTML = '';
+      sctx.clearRect(0, 0, sigCanvas.width, sigCanvas.height);
+      document.getElementById('sigDate').value = (new Date()).toISOString().slice(0, 10);
+      currentPerson = null;
+    });
+
+    // 簽名板
     const sigCanvas = document.getElementById('sigCanvas');
     const sctx = sigCanvas.getContext('2d'); let drawing = false, lastX = 0, lastY = 0;
     function getPos(e) { const r = sigCanvas.getBoundingClientRect(); if (e.touches) return [e.touches[0].clientX - r.left, e.touches[0].clientY - r.top]; return [e.clientX - r.left, e.clientY - r.top]; }
@@ -270,18 +250,10 @@
     function applySignature() { const dataUrl = sigCanvas.toDataURL('image/png'); const d = document.getElementById('sigDate').value || ''; receiptsEl.querySelectorAll('.sig-box').forEach(b => { b.innerHTML = ''; const img = new Image(); img.src = dataUrl; img.style.maxWidth = '100%'; img.style.maxHeight = '100%'; b.appendChild(img); }); receiptsEl.querySelectorAll('.sig-date').forEach(el => el.textContent = d); }
     document.getElementById('applySig').addEventListener('click', applySignature);
 
-    // ===== Generate pair =====
-    document.getElementById('generateSelected').addEventListener('click', () => {
-      const selIdx = personSelect.value; if (selIdx === '' || !dataList.length) { alert('請先解密名單並選擇一位使用者'); return; }
-      const p = dataList[Number(selIdx)]; const pair = makeReceiptPair(p, Date.now()); receiptsEl.appendChild(pair); if (!isCanvasBlank(sigCanvas)) applySignature(); pair.scrollIntoView({ behavior: 'smooth' });
-    });
-
-    function isCanvasBlank(c) { const blank = document.createElement('canvas'); blank.width = c.width; blank.height = c.height; return c.toDataURL() === blank.toDataURL(); }
-
-    function makeReceiptPair(p, idx) {
+    // DOM 預覽（非必要，但保留）
+    function makeReceiptPair(p) {
       const wrapper = document.createElement('div'); wrapper.className = 'receipt-pair';
-      const amountText = formatCurrency(p.amount);
-      const amountChinese = numberToChinese(p.amount);
+      const amountText = formatCurrency(p.amount); const amountChinese = numberToChinese(p.amount);
       for (let copy = 1; copy <= 2; copy++) {
         const r = document.createElement('div'); r.className = 'receipt';
         const title = `<div class="title">領　　據</div><div class="subtitle">（${copy === 1 ? '工房存聯' : '具領人存聯'}）</div>`;
@@ -297,22 +269,140 @@
       return wrapper;
     }
 
-    // ===== Export PDF (pair per page) =====
+    document.getElementById('generateSelected').addEventListener('click', () => {
+      const selIdx = personSelect.value; if (selIdx === '' || !dataList.length) { alert('請先解密名單並選擇一位使用者'); return; }
+      receiptsEl.innerHTML = '';
+      const p = dataList[Number(selIdx)]; currentPerson = p;
+      const pair = makeReceiptPair(p); receiptsEl.appendChild(pair);
+      pair.scrollIntoView({ behavior: 'smooth' });
+    });
+
+    // ===== 向量 PDF：框線/文字皆用 jsPDF 繪製；只有簽名為圖片 =====
     document.getElementById('exportPDF').addEventListener('click', async () => {
-      const { jsPDF } = window.jspdf; const pdf = new jsPDF({ unit: 'pt', format: 'a4' });
-      const pairs = receiptsEl.querySelectorAll('.receipt-pair'); if (!pairs.length) { alert('尚無可匯出的領據'); return; }
-      const a4w = 595.28, a4h = 841.89, margin = 20; let first = true;
-      for (const pair of pairs) {
-        const canvas = await html2canvas(pair, { scale: 2, useCORS: true });
-        const img = canvas.toDataURL('image/png');
-        let w = a4w - 2 * margin; let h = canvas.height * (w / canvas.width);
-        if (h > a4h - 2 * margin) { h = a4h - 2 * margin; w = canvas.width * (h / canvas.height); }
-        const x = (a4w - w) / 2, y = (a4h - h) / 2;
-        if (!first) pdf.addPage();
-        pdf.addImage(img, 'PNG', x, y, w, h);
-        first = false;
+      const { jsPDF } = window.jspdf; if (!currentPerson) { alert('請先產生領據'); return; }
+      const pdf = new jsPDF({ unit: 'pt', format: 'a4', compress: true });
+
+      // 內嵌 CJK 字型（可選）
+      let cjkFont = null;
+      if (EMBEDDED_FONT_BASE64) {
+        try { pdf.addFileToVFS('NotoSansTC-Regular.ttf', EMBEDDED_FONT_BASE64); pdf.addFont('NotoSansTC-Regular.ttf', 'NotoSansTC', 'normal'); cjkFont = 'NotoSansTC'; } catch (e) { cjkFont = null; }
       }
-      pdf.save('receipts.pdf');
+
+      const page = { w: 595.28, h: 841.89, margin: 24, gap: 14 };
+      const innerW = page.w - page.margin * 2; const innerH = (page.h - page.margin * 2 - page.gap) / 2;
+
+      // 取得簽名圖（若有）
+      const sigBlank = isCanvasBlank(sigCanvas);
+      const sigImg = sigBlank ? null : sigCanvas.toDataURL('image/png');
+
+      drawReceipt(pdf, page.margin, page.margin, innerW, innerH, currentPerson, '工房存聯', cjkFont, sigImg);
+      drawReceipt(pdf, page.margin, page.margin + innerH + page.gap, innerW, innerH, currentPerson, '具領人存聯', cjkFont, sigImg);
+
+      const fname = makeFileName(currentPerson) + '.pdf';
+      pdf.save(fname);
+    });
+
+    function makeFileName(p) {
+      const n = (p.name || '').toString(); const m = (p.memo || '').toString();
+      const raw = (n + '_' + m).replace(/\s+/g, '_');
+      return raw.replace(/[^\w\-一-龥_]/g, '').slice(0, 80) || 'receipt';
+    }
+
+    function drawReceipt(pdf, x, y, w, h, p, copyLabel, cjkFont, sigImg) {
+      // 外框
+      pdf.setDrawColor(0); pdf.setLineWidth(2.5); pdf.rect(x, y, w, h);
+
+      const pad = 16; const left = x + pad; const top = y + pad; const right = x + w - pad;
+
+      // 標題（置中）
+      drawCNText(pdf, '領　　據', x + w / 2, top + 24, { size: 24, align: 'center', cjkFont });
+      // 副標（右上）
+      drawCNText(pdf, `（${copyLabel}）`, right, top + 8, { size: 10, align: 'right', cjkFont });
+
+      // 內文段落
+      const amountText = formatCurrency(p.amount);
+      const amountChinese = numberToChinese(p.amount);
+      const body = `本人 ${p.name} 茲收到 微行星聲樂藝術工房 承辦 ${p.memo || ''}，並經本人查清出勤狀況無誤，共計 ${amountText} （大寫：${amountChinese}）。`;
+      drawCNParagraph(pdf, body, left, top + 56, right - left, { size: 12, line: 18, cjkFont });
+
+      // 資訊列
+      const baseY = top + 56 + 18 * 3 + 8; // 估略三行高度
+      drawCNText(pdf, '具領人：', left, baseY, { size: 12, cjkFont });
+      drawCNText(pdf, `${p.name || ''}（${p.position || ''}）`, left + 60, baseY, { size: 12, cjkFont });
+      drawCNText(pdf, '身分證字號：', left, baseY + 18, { size: 12, cjkFont });
+      drawCNText(pdf, `${p.id_number || ''}`, left + 84, baseY + 18, { size: 12, cjkFont });
+      drawCNText(pdf, '戶籍地址：', left, baseY + 36, { size: 12, cjkFont }); drawCNParagraph(pdf, `${p.address || ''}`, left + 60, baseY + 36, right - left - 60, { size: 12, line: 18, cjkFont });
+      drawCNText(pdf, '匯款帳號：', left, baseY + 72, { size: 12, cjkFont });
+      drawCNText(pdf, `${p.bank_account || ''}`, left + 72, baseY + 72, { size: 12, cjkFont });
+      drawCNText(pdf, '聯絡電話：', left + 260, baseY + 72, { size: 12, cjkFont });
+      drawCNText(pdf, `${p.phone || ''}`, left + 320, baseY + 72, { size: 12, cjkFont });
+
+      drawCNText(pdf, '簽名日期：', left, baseY + 96, { size: 12, cjkFont });
+      drawCNText(pdf, `${document.getElementById('sigDate').value || ''}`, left + 72, baseY + 96, { size: 12, cjkFont });
+
+      // 簽名框
+      const sigW = 220, sigH = 70; const sigX = right - sigW; const sigY = baseY + 120;
+      pdf.setLineDash([3]); pdf.setDrawColor(102); pdf.rect(sigX, sigY, sigW, sigH); pdf.setLineDash([]);
+      drawCNText(pdf, '收款人簽名：', sigX, sigY - 6, { size: 11, cjkFont });
+      if (sigImg) { pdf.addImage(sigImg, 'PNG', sigX + 6, sigY + 6, sigW - 12, sigH - 12); }
+    }
+
+    // —— 文字繪製：若有 CJK 字型則用向量；否則以小圖嵌入 ——
+    function drawCNText(pdf, text, x, y, { size = 12, align = 'left', cjkFont = null } = {}) {
+      if (cjkFont) { pdf.setFont(cjkFont, 'normal'); pdf.setFontSize(size); pdf.text(text, x, y, { align }); return; }
+      const img = renderTextToImage(text, size, { bold: false });
+      const wpt = img.w * 0.75, hpt = img.h * 0.75; // px→pt  96dpi≈72pt
+      let drawX = x, drawY = y - hpt + 2;
+      if (align === 'center') drawX = x - wpt / 2; if (align === 'right') drawX = x - wpt;
+      pdf.addImage(img.data, 'JPEG', drawX, drawY, wpt, hpt);
+    }
+
+    function drawCNParagraph(pdf, text, x, y, maxW, { size = 12, line = 18, cjkFont = null } = {}) {
+      if (cjkFont) { pdf.setFont(cjkFont, 'normal'); pdf.setFontSize(size); const lines = pdf.splitTextToSize(text, maxW); pdf.text(lines, x, y); return; }
+      const img = renderParagraphToImage(text, size, maxW, line);
+      const wpt = img.w * 0.75, hpt = img.h * 0.75; pdf.addImage(img.data, 'JPEG', x, y - size + 2, wpt, hpt);
+    }
+
+    function renderTextToImage(text, fontPt, { bold = false } = {}) {
+      const scale = 2; const fontPx = Math.round(fontPt * (96 / 72));
+      const canvas = document.createElement('canvas'); const ctx = canvas.getContext('2d');
+      ctx.font = (bold ? '600 ' : '') + fontPx + 'px "Noto Sans TC", "PingFang TC", "Microsoft JhengHei", sans-serif';
+      const w = Math.ceil(ctx.measureText(text).width) + 6; const h = fontPx + 8; canvas.width = w * scale; canvas.height = h * scale; ctx.scale(scale, scale); ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, canvas.width, canvas.height); ctx.fillStyle = '#000'; ctx.font = (bold ? '600 ' : '') + fontPx + 'px "Noto Sans TC", "PingFang TC", "Microsoft JhengHei", sans-serif'; ctx.fillText(text, 3, h - 6);
+      return { data: canvas.toDataURL('image/jpeg', 0.7), w, h };
+    }
+
+    function renderParagraphToImage(text, fontPt, maxWpt, lineHpt) {
+      const scale = 2; const fontPx = Math.round(fontPt * (96 / 72)); const maxWpx = Math.floor(maxWpt * (96 / 72)); const lineHpx = Math.round(lineHpt * (96 / 72));
+      const ctx = document.createElement('canvas').getContext('2d'); ctx.font = fontPx + 'px "Noto Sans TC", "PingFang TC", "Microsoft JhengHei", sans-serif';
+      const lines = []; let buf = ''; for (const ch of text) { const test = buf + ch; if (ctx.measureText(test).width > maxWpx) { lines.push(buf); buf = ch; } else { buf = test; } }
+      if (buf) lines.push(buf);
+      const w = maxWpx; const h = lineHpx * lines.length + 6; const canvas = document.createElement('canvas'); canvas.width = w * scale; canvas.height = h * scale; const c = canvas.getContext('2d'); c.scale(scale, scale); c.fillStyle = '#fff'; c.fillRect(0, 0, canvas.width, canvas.height); c.fillStyle = '#000'; c.font = fontPx + 'px "Noto Sans TC", "PingFang TC", "Microsoft JhengHei", sans-serif';
+      lines.forEach((ln, i) => c.fillText(ln, 2, 4 + (i + 1) * lineHpx - Math.round(lineHpx / 4)));
+      return { data: canvas.toDataURL('image/jpeg', 0.68), w, h };
+    }
+
+    function isCanvasBlank(c) { const blank = document.createElement('canvas'); blank.width = c.width; blank.height = c.height; return c.toDataURL() === blank.toDataURL(); }
+    // —— 批次匯出所有人（不含簽名） ——
+    document.getElementById('exportAll').addEventListener('click', async () => {
+      const { jsPDF } = window.jspdf;
+      if (!dataList.length) { alert('名單為空，請先解密載入 people.enc.json'); return; }
+      // 不帶簽名
+      const sigImg = null;
+      // 逐一產生，避免一次觸發太多下載被瀏覽器阻擋
+      for (const p of dataList) {
+        const pdf = new jsPDF({ unit: 'pt', format: 'a4', compress: true });
+        let cjkFont = null;
+        if (EMBEDDED_FONT_BASE64) {
+          try { pdf.addFileToVFS('NotoSansTC-Regular.ttf', EMBEDDED_FONT_BASE64); pdf.addFont('NotoSansTC-Regular.ttf', 'NotoSansTC', 'normal'); cjkFont = 'NotoSansTC'; } catch (e) { cjkFont = null; }
+        }
+        const page = { w: 595.28, h: 841.89, margin: 24, gap: 14 };
+        const innerW = page.w - page.margin * 2; const innerH = (page.h - page.margin * 2 - page.gap) / 2;
+        drawReceipt(pdf, page.margin, page.margin, innerW, innerH, p, '工房存聯', cjkFont, sigImg);
+        drawReceipt(pdf, page.margin, page.margin + innerH + page.gap, innerW, innerH, p, '具領人存聯', cjkFont, sigImg);
+        const fname = makeFileName(p) + '.pdf';
+        pdf.save(fname);
+        await new Promise(r => setTimeout(r, 180));
+      }
     });
   </script>
 </body>
