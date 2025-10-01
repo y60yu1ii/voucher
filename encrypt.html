@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>people.csv 加密工具（AES-GCM）</title>
+  <style>
+    body{font-family:"Noto Sans TC",sans-serif;padding:24px;max-width:760px;margin:0 auto}
+    input,button{font-size:16px}
+    .btn{background:#1f8ef1;color:#fff;border:none;padding:8px 12px;border-radius:6px;cursor:pointer}
+    .row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+    textarea{width:100%;min-height:160px}
+    code{background:#f2f2f2;padding:2px 6px;border-radius:4px}
+  </style>
+</head>
+<body>
+  <h1>people.csv 加密工具（AES‑GCM + PBKDF2）</h1>
+  <p>此工具完全在瀏覽器本機執行，不會上傳資料。輸出檔為 <code>people.enc.json</code>，可放到 GitHub Pages。</p>
+
+  <div class="row">
+    <input type="file" id="csvFile" accept=".csv,text/csv" />
+    <input type="password" id="pwd" placeholder="輸入密碼" />
+    <button class="btn" id="run">加密並下載</button>
+  </div>
+
+  <h3>或直接貼上 CSV 內容</h3>
+  <textarea id="csvText" placeholder="name,position,amount,id_number,address,bank_account,phone,memo\n王小明,鋼琴伴奏,14000,......"></textarea>
+
+  <script>
+    const enc = new TextEncoder();
+    const b64 = { to(b){ return btoa(String.fromCharCode(...new Uint8Array(b))); } };
+    async function deriveKey(password, salt){
+      const keyMat = await crypto.subtle.importKey('raw', enc.encode(password), 'PBKDF2', false, ['deriveKey']);
+      return crypto.subtle.deriveKey({name:'PBKDF2', salt, iterations:120000, hash:'SHA-256'}, keyMat, {name:'AES-GCM', length:256}, true, ['encrypt']);
+    }
+    async function encryptToEnvelope(plaintext, password){
+      const salt = crypto.getRandomValues(new Uint8Array(16));
+      const iv = crypto.getRandomValues(new Uint8Array(12));
+      const key = await deriveKey(password, salt);
+      const ct = await crypto.subtle.encrypt({name:'AES-GCM', iv}, key, enc.encode(plaintext));
+      return { salt: b64.to(salt.buffer), iv: b64.to(iv.buffer), ciphertext: b64.to(ct) };
+    }
+
+    document.getElementById('run').addEventListener('click', async ()=>{
+      const pwd = document.getElementById('pwd').value; if(!pwd){ alert('請輸入密碼'); return; }
+      let csv = document.getElementById('csvText').value.trim();
+      const f = document.getElementById('csvFile').files[0]; if(f){ csv = await f.text(); }
+      if(!csv){ alert('請提供 CSV'); return; }
+      const env = await encryptToEnvelope(csv, pwd);
+      const blob = new Blob([JSON.stringify(env)], {type:'application/json'});
+      const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download='people.enc.json'; a.click();
+    });
+  </script>
+</body>
+</html>
