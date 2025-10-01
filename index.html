@@ -1,37 +1,147 @@
 <!doctype html>
 <html lang="zh-Hant">
+
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>領據產生器（加密名單｜一式兩份同頁｜簽章｜PDF）</title>
   <style>
-    body{font-family:"Noto Sans TC",-apple-system,BlinkMacSystemFont,"Helvetica Neue",Arial;background:#f6f7fb;padding:16px;color:#111}
-    .app{max-width:900px;margin:0 auto}
-    h1{margin:0;font-size:20px}
-    .controls{display:flex;gap:10px;flex-wrap:wrap;margin-top:12px;align-items:center}
-    .btn{background:#1f8ef1;color:#fff;border:none;padding:8px 12px;border-radius:6px;cursor:pointer}
-    .btn.gray{background:#6c757d}
-    .receipts{margin-top:18px;display:flex;flex-direction:column;gap:18px}
-    .receipt-pair{display:flex;flex-direction:column;gap:10px}
-    .receipt{width:100%;border:6px solid #000;padding:28px;background:#fff;border-radius:2px;box-sizing:border-box;position:relative}
-    .title{text-align:center;font-size:30px;margin-bottom:10px;letter-spacing:10px}
-    .subtitle{position:absolute;right:28px;top:12px;font-size:13px}
-    .body-text{font-size:16px;line-height:1.9;margin-top:10px;margin-bottom:8px}
-    .meta{margin-top:8px;font-size:15px}
-    .sig-area{display:flex;gap:12px;align-items:center;margin-top:12px}
-    .sig-box{width:300px;height:80px;border:2px dashed #666;display:flex;align-items:center;justify-content:center;background:#fafafa}
-    .sig-box img{max-height:76px}
-    .small{font-size:13px;color:#444}
-    @media print{.controls,.canvas-controls{display:none}.receipt{page-break-inside:avoid}}
+    body {
+      font-family: "Noto Sans TC", -apple-system, BlinkMacSystemFont, "Helvetica Neue", Arial;
+      background: #f6f7fb;
+      padding: 16px;
+      color: #111
+    }
+
+    .app {
+      max-width: 900px;
+      margin: 0 auto
+    }
+
+    h1 {
+      margin: 0;
+      font-size: 20px
+    }
+
+    .controls {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      margin-top: 12px;
+      align-items: center
+    }
+
+    .btn {
+      background: #1f8ef1;
+      color: #fff;
+      border: none;
+      padding: 8px 12px;
+      border-radius: 6px;
+      cursor: pointer
+    }
+
+    .btn.gray {
+      background: #6c757d
+    }
+
+    .receipts {
+      margin-top: 18px;
+      display: flex;
+      flex-direction: column;
+      gap: 18px
+    }
+
+    .receipt-pair {
+      display: flex;
+      flex-direction: column;
+      gap: 10px
+    }
+
+    .receipt {
+      width: 100%;
+      border: 6px solid #000;
+      padding: 28px;
+      background: #fff;
+      border-radius: 2px;
+      box-sizing: border-box;
+      position: relative
+    }
+
+    .title {
+      text-align: center;
+      font-size: 30px;
+      margin-bottom: 10px;
+      letter-spacing: 10px
+    }
+
+    .subtitle {
+      position: absolute;
+      right: 28px;
+      top: 12px;
+      font-size: 13px
+    }
+
+    .body-text {
+      font-size: 16px;
+      line-height: 1.9;
+      margin-top: 10px;
+      margin-bottom: 8px
+    }
+
+    .meta {
+      margin-top: 8px;
+      font-size: 15px
+    }
+
+    .sig-area {
+      display: flex;
+      gap: 12px;
+      align-items: center;
+      margin-top: 12px
+    }
+
+    .sig-box {
+      width: 300px;
+      height: 80px;
+      border: 2px dashed #666;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: #fafafa
+    }
+
+    .sig-box img {
+      max-height: 76px
+    }
+
+    .small {
+      font-size: 13px;
+      color: #444
+    }
+
+    @media print {
+
+      .controls,
+      .canvas-controls {
+        display: none
+      }
+
+      .receipt {
+        page-break-inside: avoid
+      }
+    }
   </style>
 </head>
+
 <body>
   <div class="app">
     <h1>領據產生器（加密名單）</h1>
 
     <div class="controls">
       <label>選擇：</label>
-      <select id="personSelect" style="min-width:260px"><option>（載入中…）</option></select>
+      <select id="personSelect" style="min-width:260px">
+        <option>（載入中…）</option>
+      </select>
       <button class="btn" id="generateSelected">產生領據</button>
       <div style="margin-left:auto;display:flex;gap:8px">
         <button class="btn gray" id="clearAll">清除所有</button>
@@ -42,7 +152,8 @@
     <div class="canvas-controls" style="margin-top:12px;display:flex;gap:10px;align-items:center;flex-wrap:wrap">
       <div>
         <div class="small">簽名板</div>
-        <canvas id="sigCanvas" width="420" height="110" style="border:1px solid #ccc;border-radius:6px;background:#fff"></canvas>
+        <canvas id="sigCanvas" width="420" height="110"
+          style="border:1px solid #ccc;border-radius:6px;background:#fff"></canvas>
         <div style="margin-top:6px;display:flex;gap:8px">
           <button class="btn" id="applySig">套用簽名</button>
           <button class="btn gray" id="clearSig">清除簽名</button>
@@ -56,9 +167,6 @@
 
     <div id="receipts" class="receipts" aria-live="polite"></div>
 
-    <div style="margin-top:18px;color:#666;font-size:13px">
-      * 名單檔使用 <code>people.enc.json</code>（AES-GCM 加密）。頁面載入時會要求輸入密碼於瀏覽器端解密；密碼不會存放在 GitHub。
-    </div>
   </div>
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
@@ -68,59 +176,59 @@
     const enc = new TextEncoder();
     const dec = new TextDecoder();
     const b64 = {
-      to(b){ return btoa(String.fromCharCode(...new Uint8Array(b))); },
-      from(s){ return Uint8Array.from(atob(s), c=>c.charCodeAt(0)).buffer; }
+      to(b) { return btoa(String.fromCharCode(...new Uint8Array(b))); },
+      from(s) { return Uint8Array.from(atob(s), c => c.charCodeAt(0)).buffer; }
     };
-    async function deriveKey(password, salt){
+    async function deriveKey(password, salt) {
       const keyMat = await crypto.subtle.importKey('raw', enc.encode(password), 'PBKDF2', false, ['deriveKey']);
       return crypto.subtle.deriveKey(
-        { name:'PBKDF2', salt, iterations:120000, hash:'SHA-256' },
+        { name: 'PBKDF2', salt, iterations: 120000, hash: 'SHA-256' },
         keyMat,
-        { name:'AES-GCM', length:256 },
+        { name: 'AES-GCM', length: 256 },
         false,
-        ['encrypt','decrypt']
+        ['encrypt', 'decrypt']
       );
     }
-    async function decryptJSONEnvelope(envelope, password){
+    async function decryptJSONEnvelope(envelope, password) {
       // envelope: { salt: b64, iv: b64, ciphertext: b64 }
       const salt = b64.from(envelope.salt);
       const iv = new Uint8Array(b64.from(envelope.iv));
       const ct = b64.from(envelope.ciphertext);
       const key = await deriveKey(password, salt);
-      const plainBuf = await crypto.subtle.decrypt({name:'AES-GCM', iv}, key, ct);
+      const plainBuf = await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, key, ct);
       return dec.decode(plainBuf);
     }
 
     // ===== CSV helpers =====
-    function parseCSV(text){
+    function parseCSV(text) {
       // 簡易解析（無引號處理）。header: name,position,amount,id_number,address,bank_account,phone,memo
-      const lines = text.trim().split(/\r?\n/).map(l=>l.trim()).filter(Boolean);
-      if(!lines.length) return [];
-      const headers = lines[0].split(',').map(h=>h.trim());
+      const lines = text.trim().split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+      if (!lines.length) return [];
+      const headers = lines[0].split(',').map(h => h.trim());
       const rows = [];
-      for(let i=1;i<lines.length;i++){
-        const cols = lines[i].split(',').map(c=>c.trim());
-        const obj = {}; headers.forEach((h,idx)=> obj[h] = cols[idx] ?? '');
+      for (let i = 1; i < lines.length; i++) {
+        const cols = lines[i].split(',').map(c => c.trim());
+        const obj = {}; headers.forEach((h, idx) => obj[h] = cols[idx] ?? '');
         rows.push(obj);
       }
       return rows;
     }
-    function escapeHtml(s){ if(s==null) return ''; return String(s).replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])); }
-    function formatCurrency(n){ if(n==null||n==='') return ''; return Number(String(n).replace(/[^0-9.-]/g,'')).toLocaleString() + ' 元'; }
-    function numberToChinese(num){
-      const units=['','拾','佰','仟','萬','拾','佰','仟','億'];
-      const chars=['零','壹','貳','參','肆','伍','陸','柒','捌','玖'];
-      const s=String(parseInt(String(num).replace(/\D/g,'' )||'0',10));
-      if(s==='0') return '零元整';
-      let out='';
-      const arr=s.split('').reverse();
-      for(let i=0;i<arr.length;i++){
-        const n=+arr[i];
-        if(n===0){ if(!out.startsWith('零')) out='零'+out; }
-        else{ out=chars[n]+units[i]+out; }
+    function escapeHtml(s) { if (s == null) return ''; return String(s).replace(/[&<>"']/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[m])); }
+    function formatCurrency(n) { if (n == null || n === '') return ''; return Number(String(n).replace(/[^0-9.-]/g, '')).toLocaleString() + ' 元'; }
+    function numberToChinese(num) {
+      const units = ['', '拾', '佰', '仟', '萬', '拾', '佰', '仟', '億'];
+      const chars = ['零', '壹', '貳', '參', '肆', '伍', '陸', '柒', '捌', '玖'];
+      const s = String(parseInt(String(num).replace(/\D/g, '') || '0', 10));
+      if (s === '0') return '零元整';
+      let out = '';
+      const arr = s.split('').reverse();
+      for (let i = 0; i < arr.length; i++) {
+        const n = +arr[i];
+        if (n === 0) { if (!out.startsWith('零')) out = '零' + out; }
+        else { out = chars[n] + units[i] + out; }
       }
-      out=out.replace(/零+/g,'零').replace(/零$/,'');
-      return out+'元整';
+      out = out.replace(/零+/g, '零').replace(/零$/, '');
+      return out + '元整';
     }
 
     let dataList = [];
@@ -128,60 +236,60 @@
     const receiptsEl = document.getElementById('receipts');
 
     // ===== Load encrypted list =====
-    (async function init(){
-      try{
-        const res = await fetch('./people.enc.json', {cache:'no-store'});
-        if(!res.ok){ personSelect.innerHTML = '<option>（找不到 people.enc.json）</option>'; return; }
+    (async function init() {
+      try {
+        const res = await fetch('./people.enc.json', { cache: 'no-store' });
+        if (!res.ok) { personSelect.innerHTML = '<option>（找不到 people.enc.json）</option>'; return; }
         const envelope = await res.json();
         const password = prompt('請輸入名單密碼（不會上傳）：');
-        if(!password){ personSelect.innerHTML = '<option>（未提供密碼）</option>'; return; }
-        const csvText = await decryptJSONEnvelope(envelope, password).catch(()=>null);
-        if(!csvText){ personSelect.innerHTML = '<option>（密碼錯誤或解密失敗）</option>'; return; }
+        if (!password) { personSelect.innerHTML = '<option>（未提供密碼）</option>'; return; }
+        const csvText = await decryptJSONEnvelope(envelope, password).catch(() => null);
+        if (!csvText) { personSelect.innerHTML = '<option>（密碼錯誤或解密失敗）</option>'; return; }
         dataList = parseCSV(csvText);
         rebuildSelect();
-      }catch(e){ personSelect.innerHTML = '<option>（讀取名單失敗）</option>'; }
-      document.getElementById('sigDate').value=(new Date()).toISOString().slice(0,10);
+      } catch (e) { personSelect.innerHTML = '<option>（讀取名單失敗）</option>'; }
+      document.getElementById('sigDate').value = (new Date()).toISOString().slice(0, 10);
     })();
 
-    function rebuildSelect(){
+    function rebuildSelect() {
       personSelect.innerHTML = '';
-      if(!dataList.length){ const opt=document.createElement('option'); opt.textContent='（尚無資料）'; personSelect.appendChild(opt); return; }
-      dataList.forEach((r,idx)=>{ const opt=document.createElement('option'); opt.value=idx; opt.textContent = r.name + (r.position? ' — '+r.position : ''); personSelect.appendChild(opt); });
+      if (!dataList.length) { const opt = document.createElement('option'); opt.textContent = '（尚無資料）'; personSelect.appendChild(opt); return; }
+      dataList.forEach((r, idx) => { const opt = document.createElement('option'); opt.value = idx; opt.textContent = r.name + (r.position ? ' — ' + r.position : ''); personSelect.appendChild(opt); });
     }
 
     // ===== Signature pad =====
     const sigCanvas = document.getElementById('sigCanvas');
-    const sctx = sigCanvas.getContext('2d'); let drawing=false,lastX=0,lastY=0;
-    function getPos(e){ const r=sigCanvas.getBoundingClientRect(); if(e.touches) return [e.touches[0].clientX-r.left, e.touches[0].clientY-r.top]; return [e.clientX-r.left, e.clientY-r.top]; }
-    function startDraw(e){ drawing=true; [lastX,lastY]=getPos(e);} function moveDraw(e){ if(!drawing) return; const [x,y]=getPos(e); sctx.lineWidth=2; sctx.lineJoin='round'; sctx.lineCap='round'; sctx.beginPath(); sctx.moveTo(lastX,lastY); sctx.lineTo(x,y); sctx.stroke(); [lastX,lastY]=[x,y]; }
-    function stopDraw(){ drawing=false; }
+    const sctx = sigCanvas.getContext('2d'); let drawing = false, lastX = 0, lastY = 0;
+    function getPos(e) { const r = sigCanvas.getBoundingClientRect(); if (e.touches) return [e.touches[0].clientX - r.left, e.touches[0].clientY - r.top]; return [e.clientX - r.left, e.clientY - r.top]; }
+    function startDraw(e) { drawing = true;[lastX, lastY] = getPos(e); } function moveDraw(e) { if (!drawing) return; const [x, y] = getPos(e); sctx.lineWidth = 2; sctx.lineJoin = 'round'; sctx.lineCap = 'round'; sctx.beginPath(); sctx.moveTo(lastX, lastY); sctx.lineTo(x, y); sctx.stroke();[lastX, lastY] = [x, y]; }
+    function stopDraw() { drawing = false; }
     sigCanvas.addEventListener('mousedown', startDraw); sigCanvas.addEventListener('mousemove', moveDraw); window.addEventListener('mouseup', stopDraw);
-    sigCanvas.addEventListener('touchstart', startDraw, {passive:false}); sigCanvas.addEventListener('touchmove', (e)=>{ moveDraw(e); e.preventDefault(); }, {passive:false}); sigCanvas.addEventListener('touchend', stopDraw);
-    document.getElementById('clearSig').addEventListener('click', ()=>{ sctx.clearRect(0,0,sigCanvas.width,sigCanvas.height); });
+    sigCanvas.addEventListener('touchstart', startDraw, { passive: false }); sigCanvas.addEventListener('touchmove', (e) => { moveDraw(e); e.preventDefault(); }, { passive: false }); sigCanvas.addEventListener('touchend', stopDraw);
+    document.getElementById('clearSig').addEventListener('click', () => { sctx.clearRect(0, 0, sigCanvas.width, sigCanvas.height); });
 
-    function applySignature(){ const dataUrl = sigCanvas.toDataURL('image/png'); const d=document.getElementById('sigDate').value || ''; receiptsEl.querySelectorAll('.sig-box').forEach(b=>{ b.innerHTML=''; const img=new Image(); img.src=dataUrl; img.style.maxWidth='100%'; img.style.maxHeight='100%'; b.appendChild(img); }); receiptsEl.querySelectorAll('.sig-date').forEach(el=> el.textContent=d); }
+    function applySignature() { const dataUrl = sigCanvas.toDataURL('image/png'); const d = document.getElementById('sigDate').value || ''; receiptsEl.querySelectorAll('.sig-box').forEach(b => { b.innerHTML = ''; const img = new Image(); img.src = dataUrl; img.style.maxWidth = '100%'; img.style.maxHeight = '100%'; b.appendChild(img); }); receiptsEl.querySelectorAll('.sig-date').forEach(el => el.textContent = d); }
     document.getElementById('applySig').addEventListener('click', applySignature);
 
     // ===== Generate pair =====
-    document.getElementById('generateSelected').addEventListener('click', ()=>{
-      const selIdx = personSelect.value; if(selIdx==='' || !dataList.length){ alert('請先解密名單並選擇一位使用者'); return; }
-      const p = dataList[Number(selIdx)]; const pair = makeReceiptPair(p, Date.now()); receiptsEl.appendChild(pair); if(!isCanvasBlank(sigCanvas)) applySignature(); pair.scrollIntoView({behavior:'smooth'});
+    document.getElementById('generateSelected').addEventListener('click', () => {
+      const selIdx = personSelect.value; if (selIdx === '' || !dataList.length) { alert('請先解密名單並選擇一位使用者'); return; }
+      const p = dataList[Number(selIdx)]; const pair = makeReceiptPair(p, Date.now()); receiptsEl.appendChild(pair); if (!isCanvasBlank(sigCanvas)) applySignature(); pair.scrollIntoView({ behavior: 'smooth' });
     });
 
-    function isCanvasBlank(c){ const blank=document.createElement('canvas'); blank.width=c.width; blank.height=c.height; return c.toDataURL()===blank.toDataURL(); }
+    function isCanvasBlank(c) { const blank = document.createElement('canvas'); blank.width = c.width; blank.height = c.height; return c.toDataURL() === blank.toDataURL(); }
 
-    function makeReceiptPair(p, idx){
-      const wrapper=document.createElement('div'); wrapper.className='receipt-pair';
+    function makeReceiptPair(p, idx) {
+      const wrapper = document.createElement('div'); wrapper.className = 'receipt-pair';
       const amountText = formatCurrency(p.amount);
       const amountChinese = numberToChinese(p.amount);
-      for(let copy=1; copy<=2; copy++){
-        const r=document.createElement('div'); r.className='receipt';
-        const title = `<div class="title">領　　據</div><div class="subtitle">（${copy===1? '工房存聯':'具領人存聯'}）</div>`;
-        const body = `<div class="body-text">本人 <strong>${escapeHtml(p.name)}</strong> 茲收到 微行星聲樂藝術工房 承辦 ${escapeHtml(p.memo||'')}，並經本人查清出勤狀況無誤，<br/>共計 <strong style=\"font-size:20px\">${amountText}</strong> （大寫：${escapeHtml(amountChinese)}）。</div>`;
-        const meta = `<div class="meta">具領人：${escapeHtml(p.name)}（${escapeHtml(p.position||'')}）</div>
-          <div class="meta">身分證字號：${escapeHtml(p.id_number||'')}</div>
-          <div class="meta">戶籍地址：${escapeHtml(p.address||'')}</div>
-          <div class="meta">匯款帳號：${escapeHtml(p.bank_account||'')}　聯絡電話：${escapeHtml(p.phone||'')}</div>
+      for (let copy = 1; copy <= 2; copy++) {
+        const r = document.createElement('div'); r.className = 'receipt';
+        const title = `<div class="title">領　　據</div><div class="subtitle">（${copy === 1 ? '工房存聯' : '具領人存聯'}）</div>`;
+        const body = `<div class="body-text">本人 <strong>${escapeHtml(p.name)}</strong> 茲收到 微行星聲樂藝術工房 承辦 ${escapeHtml(p.memo || '')}，並經本人查清出勤狀況無誤，<br/>共計 <strong style=\"font-size:20px\">${amountText}</strong> （大寫：${escapeHtml(amountChinese)}）。</div>`;
+        const meta = `<div class="meta">具領人：${escapeHtml(p.name)}（${escapeHtml(p.position || '')}）</div>
+          <div class="meta">身分證字號：${escapeHtml(p.id_number || '')}</div>
+          <div class="meta">戶籍地址：${escapeHtml(p.address || '')}</div>
+          <div class="meta">匯款帳號：${escapeHtml(p.bank_account || '')}　聯絡電話：${escapeHtml(p.phone || '')}</div>
           <div class="meta">簽名日期：<span class="sig-date">${escapeHtml(document.getElementById('sigDate').value || '')}</span></div>`;
         const sig = `<div class="sig-area"><div class="small">收款人簽名：</div><div class="sig-box"><span class="small">尚未簽章</span></div></div>`;
         r.innerHTML = title + body + meta + sig; wrapper.appendChild(r);
@@ -190,22 +298,23 @@
     }
 
     // ===== Export PDF (pair per page) =====
-    document.getElementById('exportPDF').addEventListener('click', async ()=>{
-      const { jsPDF } = window.jspdf; const pdf = new jsPDF({unit:'pt', format:'a4'});
-      const pairs = receiptsEl.querySelectorAll('.receipt-pair'); if(!pairs.length){ alert('尚無可匯出的領據'); return; }
-      const a4w=595.28, a4h=841.89, margin=20; let first=true;
-      for(const pair of pairs){
-        const canvas = await html2canvas(pair, {scale:2, useCORS:true});
+    document.getElementById('exportPDF').addEventListener('click', async () => {
+      const { jsPDF } = window.jspdf; const pdf = new jsPDF({ unit: 'pt', format: 'a4' });
+      const pairs = receiptsEl.querySelectorAll('.receipt-pair'); if (!pairs.length) { alert('尚無可匯出的領據'); return; }
+      const a4w = 595.28, a4h = 841.89, margin = 20; let first = true;
+      for (const pair of pairs) {
+        const canvas = await html2canvas(pair, { scale: 2, useCORS: true });
         const img = canvas.toDataURL('image/png');
-        let w=a4w-2*margin; let h=canvas.height*(w/canvas.width);
-        if(h>a4h-2*margin){ h=a4h-2*margin; w=canvas.width*(h/canvas.height); }
-        const x=(a4w-w)/2, y=(a4h-h)/2;
-        if(!first) pdf.addPage();
-        pdf.addImage(img,'PNG',x,y,w,h);
-        first=false;
+        let w = a4w - 2 * margin; let h = canvas.height * (w / canvas.width);
+        if (h > a4h - 2 * margin) { h = a4h - 2 * margin; w = canvas.width * (h / canvas.height); }
+        const x = (a4w - w) / 2, y = (a4h - h) / 2;
+        if (!first) pdf.addPage();
+        pdf.addImage(img, 'PNG', x, y, w, h);
+        first = false;
       }
       pdf.save('receipts.pdf');
     });
   </script>
 </body>
+
 </html>
