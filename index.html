@@ -122,8 +122,9 @@
     @media print {
 
       .controls,
-      .canvas-controls {
-        display: none
+      .canvas-controls,
+      #csvPanel {
+        display: none !important;
       }
 
       .receipt {
@@ -148,7 +149,6 @@
         <button class="btn" id="exportAll">全部匯出（不含簽名）</button>
         <button class="btn" id="exportPDF">匯出 PDF（每對同頁，向量繪製）</button>
         <button class="btn" id="exportCSV">匯出 CSV（名字/帳號/金額）</button>
-
       </div>
     </div>
 
@@ -170,6 +170,17 @@
 
     <div id="receipts" class="receipts" aria-live="polite"></div>
 
+    <!-- CSV 預覽區塊：一鍵產生後會顯示 -->
+    <div id="csvPanel" style="display:none;margin-top:16px">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px">
+        <strong>CSV 預覽（名字,匯款帳號,金額）</strong>
+        <span id="csvCount" class="small" style="color:#666"></span>
+        <button class="btn gray" id="copyCsvBtn" type="button">複製到剪貼簿</button>
+      </div>
+      <textarea id="csvText" rows="8"
+        style="width:100%;font-family:ui-monospace, SFMono-Regular, Menlo, monospace;white-space:pre"></textarea>
+    </div>
+
     <div style="margin-top:18px;color:#666;font-size:13px">
       * 本頁會自動從 <code>people.enc.json</code> 讀取資料；中文完全向量化需要內嵌字型（可選，見程式碼
       <code>EMBEDDED_FONT_BASE64</code>），否則中文將以小型圖片嵌入（仍相當小）。
@@ -181,8 +192,6 @@
 
   <script>
     // ===== 可選：內嵌 CJK 字型（Base64 的 TTF 內容） =====
-    // 若你有 NotoSansTC-Regular.ttf 的 base64，貼到下方字串即可讓中文用向量文字輸出。
-    // 預設為空，則中文以小圖嵌入，檔案仍然很小。
     const EMBEDDED_FONT_BASE64 = ""; // <- 放 base64 TTF 字串（可選）
 
     // ===== Crypto helpers (WebCrypto, AES-GCM, PBKDF2) =====
@@ -200,8 +209,16 @@
 
     // ===== CSV helpers =====
     function parseCSV(text) {
-      const lines = text.trim().split(/\r?\n/).map(l => l.trim()).filter(Boolean); if (!lines.length) return [];
-      const headers = lines[0].split(',').map(h => h.trim()); const rows = []; for (let i = 1; i < lines.length; i++) { const cols = lines[i].split(',').map(c => c.trim()); const obj = {}; headers.forEach((h, idx) => obj[h] = cols[idx] ?? ''); rows.push(obj); } return rows;
+      const lines = text.trim().split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+      if (!lines.length) return [];
+      const headers = lines[0].split(',').map(h => h.trim());
+      const rows = [];
+      for (let i = 1; i < lines.length; i++) {
+        const cols = lines[i].split(',').map(c => c.trim());
+        const obj = {};
+        headers.forEach((h, idx) => obj[h] = cols[idx] ?? '');
+        rows.push(obj);
+      } return rows;
     }
     function escapeHtml(s) { if (s == null) return ''; return String(s).replace(/[&<>"']/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[m])); }
     function formatCurrency(n) { if (n == null || n === '') return ''; return Number(String(n).replace(/[^0-9.-]/g, '')).toLocaleString() + ' 元'; }
@@ -227,8 +244,14 @@
 
     function rebuildSelect() {
       personSelect.innerHTML = '';
-      if (!dataList.length) { const opt = document.createElement('option'); opt.textContent = '（尚無資料）'; personSelect.appendChild(opt); return; }
-      dataList.forEach((r, idx) => { const opt = document.createElement('option'); opt.value = idx; opt.textContent = r.name + (r.position ? ' — ' + r.position : ''); personSelect.appendChild(opt); });
+      if (!dataList.length) {
+        const opt = document.createElement('option'); opt.textContent = '（尚無資料）'; personSelect.appendChild(opt); return;
+      }
+      dataList.forEach((r, idx) => {
+        const opt = document.createElement('option');
+        opt.value = idx; opt.textContent = r.name + (r.position ? ' — ' + r.position : '');
+        personSelect.appendChild(opt);
+      });
     }
 
     // 切換人名：清空畫面與簽名板、重設日期
@@ -243,31 +266,88 @@
     const sigCanvas = document.getElementById('sigCanvas');
     const sctx = sigCanvas.getContext('2d'); let drawing = false, lastX = 0, lastY = 0;
     function getPos(e) { const r = sigCanvas.getBoundingClientRect(); if (e.touches) return [e.touches[0].clientX - r.left, e.touches[0].clientY - r.top]; return [e.clientX - r.left, e.clientY - r.top]; }
-    function startDraw(e) { drawing = true;[lastX, lastY] = getPos(e); } function moveDraw(e) { if (!drawing) return; const [x, y] = getPos(e); sctx.lineWidth = 2; sctx.lineJoin = 'round'; sctx.lineCap = 'round'; sctx.beginPath(); sctx.moveTo(lastX, lastY); sctx.lineTo(x, y); sctx.stroke();[lastX, lastY] = [x, y]; }
+    function startDraw(e) { drawing = true;[lastX, lastY] = getPos(e); }
+    function moveDraw(e) {
+      if (!drawing) return;
+      const [x, y] = getPos(e);
+      sctx.lineWidth = 2; sctx.lineJoin = 'round'; sctx.lineCap = 'round';
+      sctx.beginPath(); sctx.moveTo(lastX, lastY); sctx.lineTo(x, y); sctx.stroke();[lastX, lastY] = [x, y];
+    }
     function stopDraw() { drawing = false; }
     sigCanvas.addEventListener('mousedown', startDraw); sigCanvas.addEventListener('mousemove', moveDraw); window.addEventListener('mouseup', stopDraw);
     sigCanvas.addEventListener('touchstart', startDraw, { passive: false }); sigCanvas.addEventListener('touchmove', (e) => { moveDraw(e); e.preventDefault(); }, { passive: false }); sigCanvas.addEventListener('touchend', stopDraw);
     document.getElementById('clearSig').addEventListener('click', () => { sctx.clearRect(0, 0, sigCanvas.width, sigCanvas.height); });
 
-    function applySignature() { const dataUrl = sigCanvas.toDataURL('image/png'); const d = document.getElementById('sigDate').value || ''; receiptsEl.querySelectorAll('.sig-box').forEach(b => { b.innerHTML = ''; const img = new Image(); img.src = dataUrl; img.style.maxWidth = '100%'; img.style.maxHeight = '100%'; b.appendChild(img); }); receiptsEl.querySelectorAll('.sig-date').forEach(el => el.textContent = d); }
+    function applySignature() {
+      const dataUrl = sigCanvas.toDataURL('image/png');
+      const d = document.getElementById('sigDate').value || '';
+      receiptsEl.querySelectorAll('.sig-box').forEach(b => {
+        b.innerHTML = ''; const img = new Image(); img.src = dataUrl; img.style.maxWidth = '100%'; img.style.maxHeight = '100%'; b.appendChild(img);
+      });
+      receiptsEl.querySelectorAll('.sig-date').forEach(el => el.textContent = d);
+    }
     document.getElementById('applySig').addEventListener('click', applySignature);
 
-    // 轉義 CSV 欄位（逗號、引號、換行）
+    // —— CSV 下載/顯示工具 —— //
     function toCsvValue(v) {
       const s = String(v ?? "");
       return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
     }
-
-    // 下載 CSV（加 BOM 讓 Excel 正確顯示中文與保留字元）
     function downloadCsv(rows, filename = "export.csv") {
       const csv = rows.map(r => r.map(toCsvValue).join(",")).join("\r\n");
-      const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8;" });
+      const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8;" }); // 加 BOM 供 Excel
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url; a.download = filename;
       document.body.appendChild(a); a.click();
       document.body.removeChild(a); URL.revokeObjectURL(url);
     }
+    function buildCsvRowsFromDataList(list) {
+      const header = ["名字", "匯款帳號", "金額"];
+      const rows = list.map(p => {
+        const name = p.name ?? "";
+        const account = p.bank_account ?? p.account ?? ""; // 兼容兩種欄位名
+        const amountRaw = (p.amount ?? "").toString();
+        const amount = amountRaw === "" ? "" : amountRaw.replace(/[^0-9.\-]/g, ""); // 純數字字串
+        return [name, account, amount];
+      });
+      return [header, ...rows];
+    }
+    function rowsToCsvString(rows) {
+      return rows.map(r => r.map(toCsvValue).join(",")).join("\r\n");
+    }
+    function showCsvPreview(csvString, count) {
+      const panel = document.getElementById('csvPanel');
+      const ta = document.getElementById('csvText');
+      const cnt = document.getElementById('csvCount');
+      ta.value = csvString;
+      cnt.textContent = `共 ${count} 筆`;
+      panel.style.display = 'block';
+    }
+    function generateAndShowAndDownloadCSV() {
+      if (!dataList.length) {
+        alert('名單為空，請先解密載入 people.enc.json');
+        return;
+      }
+      const rows = buildCsvRowsFromDataList(dataList);
+      const csvText = rowsToCsvString(rows);
+      // 1) 顯示在頁面
+      showCsvPreview(csvText, dataList.length);
+      // 2) 下載（含 BOM）
+      downloadCsv(rows, "名單_帳號_金額.csv");
+    }
+    document.getElementById('exportCSV').addEventListener('click', generateAndShowAndDownloadCSV);
+    document.getElementById('copyCsvBtn').addEventListener('click', async (e) => {
+      const ta = document.getElementById('csvText');
+      try {
+        await navigator.clipboard.writeText(ta.value);
+        const old = e.target.textContent;
+        e.target.textContent = '已複製！';
+        setTimeout(() => (e.target.textContent = old), 900);
+      } catch {
+        ta.select(); document.execCommand('copy');
+      }
+    });
 
     // DOM 預覽（非必要，但保留）
     function makeReceiptPair(p) {
@@ -276,7 +356,7 @@
       for (let copy = 1; copy <= 2; copy++) {
         const r = document.createElement('div'); r.className = 'receipt';
         const title = `<div class="title">領　　據</div><div class="subtitle">（${copy === 1 ? '工房存聯' : '具領人存聯'}）</div>`;
-        const body = `<div class="body-text">本人 <strong>${escapeHtml(p.name)}</strong> 茲收到 微行星聲樂藝術工房 承辦 ${escapeHtml(p.memo || '')}，並經本人查清出勤狀況無誤，<br/>共計 <strong style=\"font-size:20px\">${amountText}</strong> （大寫：${escapeHtml(amountChinese)}）。</div>`;
+        const body = `<div class="body-text">本人 <strong>${escapeHtml(p.name)}</strong> 茲收到 微行星聲樂藝術工房 承辦 ${escapeHtml(p.memo || '')}，並經本人查清出勤狀況無誤，<br/>共計 <strong style="font-size:20px">${amountText}</strong> （大寫：${escapeHtml(amountChinese)}）。</div>`;
         const meta = `<div class="meta">具領人：${escapeHtml(p.name)}（${escapeHtml(p.position || '')}）</div>
           <div class="meta">身分證字號：${escapeHtml(p.id_number || '')}</div>
           <div class="meta">戶籍地址：${escapeHtml(p.address || '')}</div>
@@ -393,7 +473,10 @@
     function renderParagraphToImage(text, fontPt, maxWpt, lineHpt) {
       const scale = 2; const fontPx = Math.round(fontPt * (96 / 72)); const maxWpx = Math.floor(maxWpt * (96 / 72)); const lineHpx = Math.round(lineHpt * (96 / 72));
       const ctx = document.createElement('canvas').getContext('2d'); ctx.font = fontPx + 'px "Noto Sans TC", "PingFang TC", "Microsoft JhengHei", sans-serif';
-      const lines = []; let buf = ''; for (const ch of text) { const test = buf + ch; if (ctx.measureText(test).width > maxWpx) { lines.push(buf); buf = ch; } else { buf = test; } }
+      const lines = []; let buf = '';
+      for (const ch of text) {
+        const test = buf + ch; if (ctx.measureText(test).width > maxWpx) { lines.push(buf); buf = ch; } else { buf = test; }
+      }
       if (buf) lines.push(buf);
       const w = maxWpx; const h = lineHpx * lines.length + 6; const canvas = document.createElement('canvas'); canvas.width = w * scale; canvas.height = h * scale; const c = canvas.getContext('2d'); c.scale(scale, scale); c.fillStyle = '#fff'; c.fillRect(0, 0, canvas.width, canvas.height); c.fillStyle = '#000'; c.font = fontPx + 'px "Noto Sans TC", "PingFang TC", "Microsoft JhengHei", sans-serif';
       lines.forEach((ln, i) => c.fillText(ln, 2, 4 + (i + 1) * lineHpx - Math.round(lineHpx / 4)));
@@ -401,13 +484,12 @@
     }
 
     function isCanvasBlank(c) { const blank = document.createElement('canvas'); blank.width = c.width; blank.height = c.height; return c.toDataURL() === blank.toDataURL(); }
+
     // —— 批次匯出所有人（不含簽名） ——
     document.getElementById('exportAll').addEventListener('click', async () => {
       const { jsPDF } = window.jspdf;
       if (!dataList.length) { alert('名單為空，請先解密載入 people.enc.json'); return; }
-      // 不帶簽名
-      const sigImg = null;
-      // 逐一產生，避免一次觸發太多下載被瀏覽器阻擋
+      const sigImg = null; // 不帶簽名
       for (const p of dataList) {
         const pdf = new jsPDF({ unit: 'pt', format: 'a4', compress: true });
         let cjkFont = null;
@@ -422,28 +504,6 @@
         pdf.save(fname);
         await new Promise(r => setTimeout(r, 180));
       }
-
-      // 匯出三欄 CSV：名字、匯款帳號、金額（全名單）
-      document.getElementById('exportCSV').addEventListener('click', () => {
-        if (!dataList.length) {
-          alert('名單為空，請先解密載入 people.enc.json');
-          return;
-        }
-        // 欄位順序固定：名字、匯款帳號、金額
-        const header = ["名字", "匯款帳號", "金額"];
-
-        const rows = dataList.map(p => {
-          // 帳號常有前導 0，保持字串型態；金額輸出原始數值（不加「元」與千分位）
-          const name = p.name ?? "";
-          const account = p.bank_account ?? p.account ?? ""; // 兼容若欄位名是 account
-          // 盡量擷取數值；若空白則輸出空字串
-          const amountRaw = (p.amount ?? "").toString();
-          const amount = amountRaw === "" ? "" : amountRaw.replace(/[^0-9.\-]/g, "");
-          return [name, account, amount];
-        });
-
-        downloadCsv([header, ...rows], "名單_帳號_金額.csv");
-      });
     });
   </script>
 </body>
