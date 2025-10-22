@@ -147,6 +147,8 @@
         <button class="btn gray" id="clearAll">清除所有</button>
         <button class="btn" id="exportAll">全部匯出（不含簽名）</button>
         <button class="btn" id="exportPDF">匯出 PDF（每對同頁，向量繪製）</button>
+        <button class="btn" id="exportCSV">匯出 CSV（名字/帳號/金額）</button>
+
       </div>
     </div>
 
@@ -249,6 +251,23 @@
 
     function applySignature() { const dataUrl = sigCanvas.toDataURL('image/png'); const d = document.getElementById('sigDate').value || ''; receiptsEl.querySelectorAll('.sig-box').forEach(b => { b.innerHTML = ''; const img = new Image(); img.src = dataUrl; img.style.maxWidth = '100%'; img.style.maxHeight = '100%'; b.appendChild(img); }); receiptsEl.querySelectorAll('.sig-date').forEach(el => el.textContent = d); }
     document.getElementById('applySig').addEventListener('click', applySignature);
+
+    // 轉義 CSV 欄位（逗號、引號、換行）
+    function toCsvValue(v) {
+      const s = String(v ?? "");
+      return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+    }
+
+    // 下載 CSV（加 BOM 讓 Excel 正確顯示中文與保留字元）
+    function downloadCsv(rows, filename = "export.csv") {
+      const csv = rows.map(r => r.map(toCsvValue).join(",")).join("\r\n");
+      const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8;" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url; a.download = filename;
+      document.body.appendChild(a); a.click();
+      document.body.removeChild(a); URL.revokeObjectURL(url);
+    }
 
     // DOM 預覽（非必要，但保留）
     function makeReceiptPair(p) {
@@ -403,6 +422,28 @@
         pdf.save(fname);
         await new Promise(r => setTimeout(r, 180));
       }
+
+      // 匯出三欄 CSV：名字、匯款帳號、金額（全名單）
+      document.getElementById('exportCSV').addEventListener('click', () => {
+        if (!dataList.length) {
+          alert('名單為空，請先解密載入 people.enc.json');
+          return;
+        }
+        // 欄位順序固定：名字、匯款帳號、金額
+        const header = ["名字", "匯款帳號", "金額"];
+
+        const rows = dataList.map(p => {
+          // 帳號常有前導 0，保持字串型態；金額輸出原始數值（不加「元」與千分位）
+          const name = p.name ?? "";
+          const account = p.bank_account ?? p.account ?? ""; // 兼容若欄位名是 account
+          // 盡量擷取數值；若空白則輸出空字串
+          const amountRaw = (p.amount ?? "").toString();
+          const amount = amountRaw === "" ? "" : amountRaw.replace(/[^0-9.\-]/g, "");
+          return [name, account, amount];
+        });
+
+        downloadCsv([header, ...rows], "名單_帳號_金額.csv");
+      });
     });
   </script>
 </body>
